@@ -34,7 +34,7 @@ def load_policy(policy_config: str, policy_dir: str, task_name: str):
         _config.get_config(policy_config), policy_dir
     )
     policy_metadata = policy.metadata
-    policy = _policy.PolicyRecorder(policy, "policy_records")
+    # policy = _policy.PolicyRecorder(policy, "policy_records")
     policy = B1KPolicyWrapper(policy, text_prompt=prompt)
     return policy
 
