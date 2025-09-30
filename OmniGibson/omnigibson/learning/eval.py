@@ -173,7 +173,7 @@ class Evaluator:
         """
         Loads and returns the policy instance.
         """
-        policy = instantiate(self.cfg.model)
+        policy = instantiate({**self.cfg.model, "task_name": self.cfg.task.name})
         logger.info("")
         logger.info("=" * 50)
         logger.info(f"Loaded policy: {self.cfg.policy_name}")
@@ -449,13 +449,10 @@ if __name__ == "__main__":
                 # run metric start callbacks
                 for metric in evaluator.metrics:
                     metric.start_callback(evaluator.env)
-                # Get max_steps for tqdm progress bar
-                try:
-                    max_steps = evaluator.env.task.termination_config["max_steps"]
-                except Exception:
-                    max_steps = 500  # fallback if not found
+
                 # tqdm for steps in the episode
-                with tqdm(total=max_steps, desc=f"Instance {idx} Ep {epi}", leave=False) as pbar:
+                max_steps = evaluator.env.task._termination_config["max_steps"]
+                with tqdm(total=max_steps, desc=f"Instance {idx} Ep {epi}", leave=True) as pbar:
                     step_count = 0
                     while not done:
                         terminated, truncated = evaluator.step()

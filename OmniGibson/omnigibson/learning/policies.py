@@ -1,14 +1,42 @@
 import logging
 import torch as th
-from omnigibson.learning.utils.array_tensor_utils import torch_to_numpy
-from omnigibson.learning.utils.network_utils import WebsocketClientPolicy
 from typing import Optional
 
+from omnigibson.learning.utils.array_tensor_utils import torch_to_numpy
+from omnigibson.learning.utils.network_utils import WebsocketClientPolicy
+from omnigibson.learning.datas import BehaviorLerobotDatasetMetadata
+
+from openpi.policies import policy as _policy
+from openpi.policies import policy_config as _policy_config
+from openpi.shared.eval_b1k_wrapper import B1KPolicyWrapper
+from openpi.training import config as _config
 
 __all__ = [
     "LocalPolicy",
     "WebsocketPolicy",
 ]
+
+
+def load_policy(policy_config: str, policy_dir: str, task_name: str):
+    dataset_root = "/scr/behavior/2025-challenge-demos"
+    metadata = BehaviorLerobotDatasetMetadata(
+        repo_id="behavior-1k/2025-challenge-demos",
+        root=dataset_root,
+        tasks=[task_name] if task_name else "turning_on_radio",
+        modalities=[],
+        cameras=[],
+    )
+    prompt = list(metadata.tasks.values())[0]
+    # log the prompt used
+    logging.info(f"Using prompt: {prompt}")
+
+    policy =_policy_config.create_trained_policy(
+        _config.get_config(policy_config), policy_dir
+    )
+    policy_metadata = policy.metadata
+    policy = _policy.PolicyRecorder(policy, "policy_records")
+    policy = B1KPolicyWrapper(policy, text_prompt=prompt)
+    return policy
 
 
 class LocalPolicy:
@@ -17,9 +45,20 @@ class LocalPolicy:
         outputs zero delta action if policy is None.
     """
 
-    def __init__(self, *args, action_dim: Optional[int] = None, **kwargs) -> None:
-        self.policy = None  # To be set later
+    def __init__(
+        self,
+        *args,
+        action_dim: Optional[int] = None,
+        policy_config: Optional[str] = None,
+        policy_dir: Optional[str] = None,
+        task_name: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         self.action_dim = action_dim
+        if policy_config is not None and policy_dir is not None and task_name is not None:
+            self.policy = load_policy(policy_config, policy_dir, task_name)
+        else:
+            self.policy = None  # To be set later
 
     def forward(self, obs: dict, *args, **kwargs) -> th.Tensor:
         """

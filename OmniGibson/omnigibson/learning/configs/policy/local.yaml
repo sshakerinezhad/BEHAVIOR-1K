@@ -5,3 +5,7 @@ policy_name: local
 model:
   _target_: omnigibson.learning.policies.LocalPolicy
   action_dim: 23
+  policy_config: pi0_b1k
+  policy_dir: /workspace/openpi/outputs/checkpoints/pi0_b1k/openpi_20250929_035039/48000/
+  # policy_config: pi05_b1k
+  # policy_dir: /workspace/openpi/outputs/checkpoints/pi05_b1k/openpi_05_20250929_205856/8000/
