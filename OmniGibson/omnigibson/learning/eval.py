@@ -48,7 +48,7 @@ from tqdm import tqdm
 m = create_module_macros(module_path=__file__)
 m.NUM_EVAL_EPISODES = 1
 m.NUM_TRAIN_INSTANCES = 200
-m.NUM_EVAL_INSTANCES = 10
+m.NUM_EVAL_INSTANCES = 3
 
 
 # set global variables to boost performance
@@ -173,7 +173,12 @@ class Evaluator:
         """
         Loads and returns the policy instance.
         """
-        policy = instantiate({**self.cfg.model, "task_name": self.cfg.task.name})
+        policy = instantiate({
+            **self.cfg.model,
+            "task_name": self.cfg.task.name,
+            "policy_config": self.cfg.policy_config,
+            "policy_dir": self.cfg.policy_dir,
+        })
         logger.info("")
         logger.info("=" * 50)
         logger.info(f"Loaded policy: {self.cfg.policy_name}")
@@ -387,7 +392,7 @@ if __name__ == "__main__":
     gm.HEADLESS = config.headless
 
     # Extract the checkpoint name from policy_dir and append log_notes
-    policy_dir = config.model.policy_dir
+    policy_dir = config.policy_dir
     policy_dir_name = os.path.basename(os.path.normpath(policy_dir))
     parent_dir_name = os.path.basename(os.path.dirname(os.path.normpath(policy_dir)))
     log_path = f"{parent_dir_name}_{policy_dir_name}"

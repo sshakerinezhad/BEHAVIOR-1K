@@ -29,7 +29,8 @@ def load_policy(policy_config: str, policy_dir: str, task_name: str):
     prompt = list(metadata.tasks.values())[0]
     # log the prompt used
     logging.info(f"Using prompt: {prompt}")
-
+    logging.info(f"Using policy config: {policy_config}")
+    logging.info(f"Using policy dir: {policy_dir}")
     policy =_policy_config.create_trained_policy(
         _config.get_config(policy_config), policy_dir
     )
