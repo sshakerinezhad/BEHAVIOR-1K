@@ -17,3 +17,5 @@ log_path: ???
 log_notes: ???
 policy_config: ???
 policy_dir: ???
+use_dataset_inputs: false  # whether to use dataset inputs for the policy
+use_dataset_inputs_proprio_only: false  # whether to use dataset inputs for the policy, but only use proprio information

@@ -181,6 +181,8 @@ class Evaluator:
             "task_name": self.cfg.task.name,
             "policy_config": self.cfg.policy_config,
             "policy_dir": self.cfg.policy_dir,
+            "use_dataset_inputs": self.cfg.use_dataset_inputs,
+            "use_dataset_inputs_proprio_only": self.cfg.use_dataset_inputs_proprio_only,
         })
         logger.info("")
         logger.info("=" * 50)
@@ -352,7 +354,16 @@ class Evaluator:
         """
         Reset the environment, policy, and compute metrics.
         """
-        self.obs = self._preprocess_obs(self.env.reset()[0])
+        # self.obs = self._preprocess_obs(self.env.reset()[0])
+        WARMUP_STEPS = 250  # Usually 50-100 is enough
+
+        self.env.reset()
+
+        for _ in range(WARMUP_STEPS):
+            # Step with zero or very small actions to let physics settle
+            obs_tup = self.env.step(th.zeros(self.robot.action_dim))
+
+        self.obs = self._preprocess_obs(obs_tup[0])
         # run metric start callbacks
         for metric in self.metrics:
             metric.start_callback(self.env)
@@ -401,6 +412,8 @@ if __name__ == "__main__":
     log_path = f"{parent_dir_name}_{policy_dir_name}"
     if config.log_notes:
         log_path += f"_{config.log_notes}"
+    Path(log_path).mkdir(parents=True, exist_ok=True)
+    OmegaConf.save(config, Path(log_path).expanduser() / "config.yaml")
 
     # set video path
     if config.write_video:

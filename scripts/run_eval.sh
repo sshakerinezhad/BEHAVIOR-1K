@@ -16,13 +16,24 @@ conda activate behavior
 #     policy_config=pi0_b1k \
 #     policy_dir=/workspace/openpi/outputs/checkpoints/pi0_b1k/openpi_0_20251005_045853/46000/
 
+# time XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
+#     policy=local \
+#     task.name=turning_on_radio \
+#     env_wrapper._target_=omnigibson.learning.wrappers.DefaultWrapper \
+#     eval_on_train_instances=true \
+#     log_notes="training_with_default_wrapper" \
+#     policy_config=pi05_b1k \
+#     max_steps=2000 \
+#     policy_dir=/workspace/openpi/outputs/checkpoints/pi05_b1k/openpi_05_20250929_205856/49999/
+
 time XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
-    policy=websocket \
+    policy=local \
     task.name=turning_on_radio \
     eval_on_train_instances=true \
-    log_notes="training_but_get_0th_index_websockets" \
+    log_notes="training_with_dataset_inputs_proprio_only" \
     policy_config=pi05_b1k \
-    max_steps=1500 \
+    max_steps=2000 \
+    use_dataset_inputs_proprio_only=false \
     policy_dir=/workspace/openpi/outputs/checkpoints/pi05_b1k/openpi_05_20250929_205856/49999/
 
 # time XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
