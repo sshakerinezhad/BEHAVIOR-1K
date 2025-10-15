@@ -109,6 +109,9 @@ class LocalPolicy:
         else:
             self.policy = None  # To be set later
 
+    def act(self, obs: dict) -> th.Tensor:
+        return self.forward(obs)
+
     def forward(self, obs: dict, *args, **kwargs) -> th.Tensor:
         """
         Directly return a zero action tensor of the specified action dimension.
