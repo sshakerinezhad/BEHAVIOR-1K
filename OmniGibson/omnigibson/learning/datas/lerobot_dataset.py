@@ -123,6 +123,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
 
         # Caches for per-episode sidecar files
         self._skill_prompts_cache = {}
+        # self._annotations_cache = {}
 
         # ========== Customizations ==========
         self.seed = seed
@@ -305,8 +306,11 @@ class BehaviorLeRobotDataset(LeRobotDataset):
             ep_idx = item["episode_index"].item()
             # Attach per-episode skill prompts (lazy, cached, optional)
             skill_prompts = self._load_episode_skill_prompts(ep_idx)
+            # annotations = self._load_episode_annotations(ep_idx)
             if skill_prompts is not None:
                 item["skill_prompts"] = skill_prompts
+            # if annotations is not None:
+            #     item["annotations"] = annotations
             return item
         # Streaming mode: we will load the episode at the current streaming index, and then increment the index for next call
         # Randomize chunk index on first call
@@ -384,8 +388,11 @@ class BehaviorLeRobotDataset(LeRobotDataset):
 
         # Attach per-episode skill prompts (lazy, cached, optional)
         skill_prompts = self._load_episode_skill_prompts(ep_idx)
+        # annotations = self._load_episode_annotations(ep_idx)
         if skill_prompts is not None:
             item["skill_prompts"] = skill_prompts
+        # if annotations is not None:
+        #     item["annotations"] = annotations
 
         self.current_streaming_frame_idx += 1
 
@@ -396,7 +403,6 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         Lazy-load and cache per-episode skill prompts based on skill prompts
         Returns skill_prompts_list or None
         """
-
         if ep_idx not in self._skill_prompts_cache:
             skill_prompts = None
             try:
@@ -409,6 +415,24 @@ class BehaviorLeRobotDataset(LeRobotDataset):
             self._skill_prompts_cache[ep_idx] = skill_prompts
 
         return self._skill_prompts_cache[ep_idx]
+
+    # def _load_episode_annotations(self, ep_idx: int) -> dict | None:
+    #     """
+    #     Lazy-load and cache per-episode annotations based on annotations
+    #     Returns annotations or None
+    #     """
+    #     if ep_idx not in self._annotations_cache:
+    #         annotations = None
+    #         try:
+    #             annotations_path = self.root / self.meta.get_annotation_path(ep_idx)
+    #             if annotations_path.is_file():
+    #                 with open(annotations_path, "r") as f:
+    #                     annotations = json.load(f)
+    #         except (KeyError, FileNotFoundError, json.JSONDecodeError):
+    #             annotations = None
+    #         self._annotations_cache[ep_idx] = annotations
+
+    #     return self._annotations_cache[ep_idx]
 
     def _get_query_indices(self, idx: int, ep_idx: int) -> tuple[dict[str, list[int | bool]]]:
         ep_idx = self.episode_data_index_pos[ep_idx]
