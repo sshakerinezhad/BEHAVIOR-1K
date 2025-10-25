@@ -174,66 +174,75 @@ class BehaviorIterableDataset(IterableDataset):
         chunk_generator = self._chunk_demo(demo_ptr, start_idx, end_idx)
         # Initialize obs loaders
         obs_loaders = dict()
-        for obs_type in self._visual_obs_types:
-            if obs_type == "pcd":
-                # pcd_generator
-                f_pcd = h5py.File(
-                    f"{self._data_path}/pcd_vid/task-{task_id:04d}/episode_{self._demo_keys[demo_ptr]}.hdf5",
-                    "r",
-                    swmr=True,
-                    libver="latest",
-                )
-                # Create a generator that yields sliding windows of point clouds
-                pcd_data = f_pcd["data/demo_0/robot_r1::fused_pcd"]
-                pcd_generator = self._h5_window_generator(pcd_data, start_idx, end_idx)
-            else:
-                # calculate the start a
-                for camera_id in self._multi_view_cameras.keys():
-                    camera_name = self._multi_view_cameras[camera_id]["name"]
-                    stride = 1
-                    kwargs = {}
-                    if obs_type == "seg_instance_id":
-                        with open(
-                            f"{self._data_path}/2025-challenge-demos/meta/episodes/task-{task_id:04d}/episode_{self._demo_keys[demo_ptr]}.json",
-                            "r",
-                        ) as f:
-                            kwargs["id_list"] = th.tensor(
-                                json.load(f)[f"{ROBOT_CAMERA_NAMES['R1Pro'][camera_id]}::unique_ins_ids"]
-                            )
-                    obs_loaders[f"{camera_name}::{obs_type}"] = iter(
-                        OBS_LOADER_MAP[obs_type](
-                            data_path=f"{self._data_path}/2025-challenge-demos",
-                            task_id=task_id,
-                            camera_id=camera_id,
-                            demo_id=self._demo_keys[demo_ptr],
-                            batch_size=self._obs_window_size,
-                            stride=stride,
-                            start_idx=start_idx * stride * self._downsample_factor,
-                            end_idx=((end_idx - 1) * stride + self._obs_window_size) * self._downsample_factor,
-                            output_size=tuple(self._multi_view_cameras[camera_id]["resolution"]),
-                            **kwargs,
-                        )
-                    )
-        for _ in range(start_idx, end_idx):
-            data, mask = next(chunk_generator)
-            # load visual obs
+        f_pcd = None
+        try:
             for obs_type in self._visual_obs_types:
                 if obs_type == "pcd":
-                    # get file from
-                    data["obs"]["pcd"] = next(pcd_generator)
+                    # pcd_generator
+                    f_pcd = h5py.File(
+                        f"{self._data_path}/pcd_vid/task-{task_id:04d}/episode_{self._demo_keys[demo_ptr]}.hdf5",
+                        "r",
+                        swmr=True,
+                        libver="latest",
+                    )
+                    # Create a generator that yields sliding windows of point clouds
+                    pcd_data = f_pcd["data/demo_0/robot_r1::fused_pcd"]
+                    pcd_generator = self._h5_window_generator(pcd_data, start_idx, end_idx)
                 else:
-                    for camera in self._multi_view_cameras.values():
-                        data["obs"][f"{camera['name']}::{obs_type}"] = next(
-                            obs_loaders[f"{camera['name']}::{obs_type}"]
+                    # calculate the start a
+                    for camera_id in self._multi_view_cameras.keys():
+                        camera_name = self._multi_view_cameras[camera_id]["name"]
+                        stride = 1
+                        kwargs = {}
+                        if obs_type == "seg_instance_id":
+                            with open(
+                                f"{self._data_path}/2025-challenge-demos/meta/episodes/task-{task_id:04d}/episode_{self._demo_keys[demo_ptr]}.json",
+                                "r",
+                            ) as f:
+                                kwargs["id_list"] = th.tensor(
+                                    json.load(f)[f"{ROBOT_CAMERA_NAMES['R1Pro'][camera_id]}::unique_ins_ids"]
+                                )
+                        obs_loaders[f"{camera_name}::{obs_type}"] = iter(
+                            OBS_LOADER_MAP[obs_type](
+                                data_path=f"{self._data_path}/2025-challenge-demos",
+                                task_id=task_id,
+                                camera_id=camera_id,
+                                demo_id=self._demo_keys[demo_ptr],
+                                batch_size=self._obs_window_size,
+                                stride=stride,
+                                start_idx=start_idx * stride * self._downsample_factor,
+                                end_idx=((end_idx - 1) * stride + self._obs_window_size) * self._downsample_factor,
+                                output_size=tuple(self._multi_view_cameras[camera_id]["resolution"]),
+                                **kwargs,
+                            )
                         )
-            data["masks"] = mask
-            yield data
-        for obs_type in self._visual_obs_types:
-            if obs_type == "pcd":
-                f_pcd.close()
-            else:
-                for camera in self._multi_view_cameras.values():
-                    obs_loaders[f"{camera['name']}::{obs_type}"].close()
+            for _ in range(start_idx, end_idx):
+                data, mask = next(chunk_generator)
+                # load visual obs
+                for obs_type in self._visual_obs_types:
+                    if obs_type == "pcd":
+                        # get file from
+                        data["obs"]["pcd"] = next(pcd_generator)
+                    else:
+                        for camera in self._multi_view_cameras.values():
+                            data["obs"][f"{camera['name']}::{obs_type}"] = next(
+                                obs_loaders[f"{camera['name']}::{obs_type}"]
+                            )
+                data["masks"] = mask
+                yield data
+        finally:
+            # Ensure all resources are released even if iteration stops early
+            if f_pcd is not None:
+                try:
+                    f_pcd.close()
+                except Exception:
+                    pass
+            for loader in list(obs_loaders.values()):
+                try:
+                    if hasattr(loader, "close"):
+                        loader.close()
+                except Exception:
+                    pass
 
     def _preload_demo(self, demo_key: Any) -> Dict[str, Any]:
         """

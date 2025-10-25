@@ -503,6 +503,28 @@ class BehaviorLeRobotDataset(LeRobotDataset):
             offset += L
         return chunks
 
+    def close(self) -> None:
+        """
+        Release any underlying resources (e.g., video loaders) held by this dataset.
+        Safe to call multiple times.
+        """
+        try:
+            if hasattr(self, "obs_loaders") and isinstance(self.obs_loaders, dict):
+                for loader in list(self.obs_loaders.values()):
+                    try:
+                        if hasattr(loader, "close"):
+                            loader.close()
+                    except Exception:
+                        pass
+                self.obs_loaders = dict()
+        except Exception:
+            # Best-effort cleanup
+            pass
+
+    def __del__(self):
+        # Ensure resources are cleaned up if the object is garbage-collected
+        self.close()
+
 class BehaviorLerobotDatasetMetadata(LeRobotDatasetMetadata):
     """
     BehaviorLerobotDatasetMetadata extends LeRobotDatasetMetadata with the following customizations:
