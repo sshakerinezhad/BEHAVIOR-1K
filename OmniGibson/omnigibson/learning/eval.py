@@ -47,8 +47,8 @@ from tqdm import tqdm
 
 m = create_module_macros(module_path=__file__)
 m.NUM_EVAL_EPISODES = 1
-m.NUM_TRAIN_INSTANCES = 4
-m.NUM_EVAL_INSTANCES = 3
+m.NUM_TRAIN_INSTANCES = 200
+m.NUM_EVAL_INSTANCES = 20
 
 
 # set global variables to boost performance
@@ -483,13 +483,13 @@ if __name__ == "__main__":
         logger.info("Starting evaluation...")
 
         # Add tqdm for the number of instances_to_run
-        for idx in tqdm(instances_to_run, desc="Instances"):
+        for idx, episode_number in tqdm(zip(instances_to_run, config.eval_instance_ids), desc="Instances"):
             evaluator.reset()
             evaluator.load_task_instance(idx, test_hidden=config.test_hidden)
             logger.info(f"Starting task instance {idx} for evaluation...")
             for epi in range(m.NUM_EVAL_EPISODES):
                 evaluator.reset()
-                evaluator.policy.set_task_instance(idx)
+                evaluator.policy.set_task_instance(episode_number)
                 done = False
                 if config.write_video:
                     video_name = str(video_path) + f"/{config.task.name}_{idx}_{epi}.mp4"

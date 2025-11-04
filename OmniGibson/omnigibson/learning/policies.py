@@ -45,7 +45,7 @@ def save_json(obj, path):
 
 
 def convert_obs_to_numpy(obs):
-    return {k: v.numpy() for k, v in obs.items()}
+    return {k: v.numpy() if hasattr(v, "numpy") else v for k, v in obs.items()}
 
 
 def get_obs_from_datapoint(datapoint):
@@ -111,14 +111,12 @@ class LocalPolicy:
             if self.use_dataset_inputs_proprio_only:
                 obs_with_proprio_from_dp = {
                     **obs,
-                    "robot_r1::proprio": self.dataset_policy.current_datapoint[OBS_TO_DP_MAPPING["robot_r1::proprio"]]
+                    "robot_r1::proprio": self.dataset_policy.get_current_datapoint()[OBS_TO_DP_MAPPING["robot_r1::proprio"]]
                 }
                 out = self.policy.act(obs_with_proprio_from_dp).detach().cpu()
-                self.dataset_policy.run_iterator_step()
             elif self.use_dataset_inputs:
-                obs_from_datapoint = get_obs_from_datapoint(self.dataset_policy.current_datapoint)
+                obs_from_datapoint = get_obs_from_datapoint(self.dataset_policy.get_current_datapoint())
                 out = self.policy.act(obs_from_datapoint).detach().cpu()
-                self.dataset_policy.run_iterator_step()
             else:
                 obs = convert_obs_to_numpy(obs)
                 out = self.policy.act(obs).detach().cpu()
@@ -136,11 +134,10 @@ class LocalPolicy:
         if self.dataset_policy is not None:
             self.dataset_policy.reset()
 
-    def set_task_instance(self, idx: str) -> None:
+    def set_task_instance(self, idx: int) -> None:
         self.task_instance = idx
         if self.dataset_policy is not None:
             self.dataset_policy.set_task_instance(idx)
-        os.makedirs(f"./obs_from_eval_v2/{self.task_instance}", exist_ok=True)
 
 
 class WebsocketPolicy:
@@ -170,7 +167,7 @@ class WebsocketPolicy:
     def reset(self) -> None:
         self.policy.reset()
 
-    def set_task_instance(self, idx: str) -> None:
+    def set_task_instance(self, idx: int) -> None:
         pass
 
 
@@ -188,45 +185,37 @@ class LookupPolicy:
         task_name: Optional[str] = None,
         **kwargs
     ) -> None:
-        config = _config.get_config(policy_config)
-        data_config = config.data.create(config.assets_dirs, config.model)
-        self.dataset = iter(
-            BehaviorLeRobotDataset(
-                repo_id=data_config.repo_id,
-                root=data_config.behavior_dataset_root,
-                tasks=[task_name],
-                modalities=["rgb"],
-                local_only=False,
-                delta_timestamps={
-                    key: [t / 30.0 for t in range(config.model.action_horizon)] for key in data_config.action_sequence_keys
-                },
-                episodes=list(range(190)),
-                chunk_streaming_using_keyframe=True,
-                shuffle=False,
-            )
-        )
+        self.config = _config.get_config(policy_config)
+        self.data_config = self.config.data.create(self.config.assets_dirs, self.config.model)
+        self.dataset = None
         self.task_instance = None
-        self.current_datapoint = None
+        self.task_name = task_name
 
-    def run_iterator_step(self):
-        self.current_datapoint = next(self.dataset)
+    def get_current_datapoint(self):
+        return next(self.dataset)
 
     def forward(self, obs: dict, *args, **kwargs) -> th.Tensor:
-        # We use 0 as the index because the index is irrelevant when chunk_streaming_using_keyframe=True
-        curr_datapoint = self.current_datapoint
-
-        # Update the current datapoint for the next call
-        self.run_iterator_step()
-
+        curr_datapoint = self.get_current_datapoint()
         return curr_datapoint["action"][0]
 
     def reset(self) -> None:
         self.task_instance = None
-        self.current_datapoint = None
 
-    def set_task_instance(self, idx: str) -> None:
+    def set_task_instance(self, idx: int) -> None:
         self.task_instance = idx
-        self.run_iterator_step()
-        while str(int((self.current_datapoint["episode_index"] // 10) % 1e3)) != idx:
-            print(f"[Seeking task instance {idx}], skipping episode_index={self.current_datapoint['episode_index']}, index={self.current_datapoint['index']}")
-            self.run_iterator_step()
+        logging.info(f"Now loading episode {idx} for task {self.task_name}")
+        self.dataset = iter(
+            BehaviorLeRobotDataset(
+                repo_id=self.data_config.repo_id,
+                root=self.data_config.behavior_dataset_root,
+                tasks=[self.task_name],
+                modalities=["rgb"],
+                local_only=False,
+                delta_timestamps={
+                    key: [t / 30.0 for t in range(self.config.model.action_horizon)] for key in self.data_config.action_sequence_keys
+                },
+                episodes=[idx],
+                chunk_streaming_using_keyframe=True,
+                shuffle=False,
+            )
+        )
