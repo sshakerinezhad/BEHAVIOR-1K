@@ -79,7 +79,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         chunk_streaming_using_keyframe: bool = True,
         shuffle: bool = True,
         seed: int = 42,
-        banned_skill_descriptions: list[str] | None = None,
+        undersampled_skill_descriptions: dict[str, float] | None = None,
     ):
         """
         Custom args:
@@ -104,11 +104,12 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                 When this is enabled, it is recommended to set shuffle to True for better randomness in chunk selection.
                 We also enforce that segmentation instance ID videos can only be loaded in chunk_streaming_using_keyframe mode for faster access.
             shuffle (bool): whether to shuffle the chunks after loading. This ONLY applies in chunk streaming mode. Recommended to be set to True for better randomness in chunk selection.
-            seed (int): random seed for shuffling chunks.
-            banned_skill_descriptions (List[str]): list of skill descriptions to filter out at the frame level. 
-                For each episode, frames corresponding to skills with descriptions in this list will be excluded from the dataset.
+            seed (int): random seed for shuffling chunks and for probabilistic skill undersampling.
+            undersampled_skill_descriptions (Dict[str, float]): dict mapping skill descriptions to their inclusion probability (0.0 to 1.0). 
+                For each skill in an episode, if its description is in this dict, it will be included with the given probability.
+                Skills not in the dict are implicitly assumed to have probability 1.0 (always included).
                 If annotations cannot be read for an episode, that entire episode will be filtered out.
-                This filtering is applied at initialization and respects chunk streaming mode.
+                This filtering is applied at initialization, respects chunk streaming mode, and uses the seed for reproducibility.
         """
         Dataset.__init__(self)
         self.repo_id = repo_id
@@ -134,7 +135,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
 
         # ========== Customizations ==========
         self.seed = seed
-        self.banned_skill_descriptions = banned_skill_descriptions if banned_skill_descriptions is not None else []
+        self.undersampled_skill_descriptions = undersampled_skill_descriptions if undersampled_skill_descriptions is not None else {}
         if modalities is None:
             modalities = ["rgb", "depth", "seg_instance_id"]
         if "seg_instance_id" in modalities:
@@ -176,7 +177,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         # Apply frame-level filtering based on skill annotations if needed
         # This must happen BEFORE creating chunks
         self.valid_frame_mask = None
-        if self.banned_skill_descriptions:
+        if self.undersampled_skill_descriptions:
             self._build_frame_mask_and_filter_episodes()
         
         # handle streaming mode and shuffling of episodes
@@ -541,15 +542,21 @@ class BehaviorLeRobotDataset(LeRobotDataset):
 
     def _build_frame_mask_and_filter_episodes(self) -> None:
         """
-        Build a frame-level validity mask based on skill annotations and banned skill descriptions.
+        Build a frame-level validity mask based on skill annotations and undersampled skill descriptions.
         For each episode, loads the annotations and marks frames as valid/invalid based on 
-        whether their corresponding skill description is in the banned list.
+        probabilistic undersampling of skills according to undersampled_skill_descriptions dict.
+        Skills not in the dict are assumed to have probability 1.0 (always included).
         Episodes where annotations cannot be loaded are filtered out entirely.
 
         This method is called BEFORE chunks are created, allowing _get_keyframe_chunk_indices
-        to filter out entire chunks that contain any banned frames.
+        to filter out entire chunks that contain undersampled frames.
+
+        Uses self.seed for RNG reproducibility.
         """
-        logger.info(f"Building frame mask with {len(self.banned_skill_descriptions)} banned skill descriptions: {self.banned_skill_descriptions}")
+        logger.info(f"Building frame mask with {len(self.undersampled_skill_descriptions)} undersampled skill descriptions: {self.undersampled_skill_descriptions}")
+
+        # Create RNG for reproducible probabilistic sampling
+        rng = np.random.default_rng(self.seed)
 
         # Build a mapping of global frame index to whether it should be included
         valid_frame_mask = []
@@ -569,12 +576,20 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                 # Create a boolean mask for this episode, default to False for all frames
                 episode_mask = [False] * ep_length
 
-                # Mark frames as valid if they belong to a non-banned skill
+                # Mark frames as valid based on probabilistic undersampling
                 for skill in skill_annotations:
-                    # if skill description is invalid, skip
+                    # Get skill description
                     skill_desc = skill["skill_description"][0]
-                    if skill_desc in self.banned_skill_descriptions:
-                        continue
+
+                    # Decide whether to include this skill based on probability
+                    if skill_desc in self.undersampled_skill_descriptions:
+
+                        # Get inclusion probability
+                        inclusion_prob = self.undersampled_skill_descriptions[skill_desc]
+
+                        if rng.random() > inclusion_prob:
+                            # Skip this skill (undersample it)
+                            continue
 
                     # this can be either a list of 2 integers (start_frame, end_frame) or a list of lists of 2 integers
                     frame_duration_lists = skill["frame_duration"]
