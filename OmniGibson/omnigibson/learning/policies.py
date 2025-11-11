@@ -1,6 +1,6 @@
 import json
+import dataclasses
 import logging
-import os
 import pickle
 import torch as th
 from typing import Optional
@@ -58,13 +58,21 @@ def get_obs_from_datapoint(datapoint):
     return convert_obs_to_numpy(obs)
 
 
-def load_policy(policy_config: str, policy_dir: str):
+def load_policy(policy_config: str, policy_dir: str, inf_time_proprio_dropout: float):
     logging.info(f"Using policy config: {policy_config}")
     logging.info(f"Using policy dir: {policy_dir}")
-    config = _config.get_config(policy_config)
-    policy = _policy_config.create_trained_policy(config, policy_dir)
+    basic_config = _config.get_config(policy_config)
+    updated_config_model = dataclasses.replace(
+        basic_config.model,
+        proprio_dropout_dropout_whole_proprio_pct=inf_time_proprio_dropout
+    )
+    updated_config = dataclasses.replace(
+        basic_config,
+        model=updated_config_model
+    )
+    policy = _policy_config.create_trained_policy(updated_config, policy_dir)
     # policy = _policy.PolicyRecorder(policy, "policy_records")
-    policy = B1KPolicyWrapper(policy, config=config)
+    policy = B1KPolicyWrapper(policy, config=updated_config)
     return policy
 
 
@@ -84,16 +92,19 @@ class LocalPolicy:
         use_dataset_inputs: Optional[bool] = False,
         use_dataset_inputs_proprio_only: Optional[bool] = False,
         prompt: Optional[str] = None,
+        inf_time_proprio_dropout: Optional[float] = 0.0,
+        n_ds_steps: Optional[int] = 0,
         **kwargs,
     ) -> None:
         self.action_dim = action_dim
         self.dataset_policy = None
         self.use_dataset_inputs = use_dataset_inputs
         self.use_dataset_inputs_proprio_only = use_dataset_inputs_proprio_only
+        self.n_ds_steps = n_ds_steps
         if policy_config is not None and policy_dir is not None and task_name is not None:
-            if self.use_dataset_inputs or self.use_dataset_inputs_proprio_only:
+            if self.use_dataset_inputs or self.use_dataset_inputs_proprio_only or self.n_ds_steps > 0:
                 self.dataset_policy = LookupPolicy(policy_config=policy_config, task_name=task_name)
-            self.policy = load_policy(policy_config, policy_dir)
+            self.policy = load_policy(policy_config, policy_dir, inf_time_proprio_dropout)
         else:
             self.policy = None  # To be set later
         self.prompt = prompt
@@ -118,6 +129,9 @@ class LocalPolicy:
                 obs_from_datapoint = get_obs_from_datapoint(self.dataset_policy.get_current_datapoint())
                 out = self.policy.act(obs_from_datapoint).detach().cpu()
             else:
+                if self.n_ds_steps > 0 and self.step_count < self.n_ds_steps:
+                    self.step_count += 1
+                    return self.dataset_policy.forward({})
                 obs = convert_obs_to_numpy(obs)
                 out = self.policy.act(obs).detach().cpu()
             self.step_count += 1

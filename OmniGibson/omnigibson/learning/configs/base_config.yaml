@@ -17,6 +17,8 @@ log_path: ???
 extra_notes: null
 policy_config: pi05_b1k
 policy_dir: null
+inf_time_proprio_dropout: 0.0  # proportion of time to drop out proprio at inference time
+n_ds_steps: 0  # number of steps to use dataset inputs for the policy
 use_heavy_robot: false  # whether to use a heavy robot for the policy
 use_dataset_inputs: false  # whether to use dataset inputs for the policy
 use_dataset_inputs_proprio_only: false  # whether to use dataset inputs for the policy, but only use proprio information
