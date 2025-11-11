@@ -80,6 +80,8 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         shuffle: bool = True,
         seed: int = 42,
         undersampled_skill_descriptions: dict[str, float] | None = None,
+        boundary_oversampling_factor: int = 1,
+        boundary_window_frames: int = 50,
     ):
         """
         Custom args:
@@ -110,6 +112,13 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                 Skills not in the dict are implicitly assumed to have probability 1.0 (always included).
                 If annotations cannot be read for an episode, all frames in that episode will be marked as invalid.
                 This filtering is applied at initialization, respects chunk streaming mode, and uses the seed for reproducibility.
+            boundary_oversampling_factor (int): multiplicative factor for oversampling chunks that contain skill boundaries.
+                For example, 3 means chunks containing boundaries will appear 3x as often in training.
+                Set to 1 (default) to disable boundary oversampling.
+                This helps the model learn critical transition moments between skills which are often underrepresented.
+            boundary_window_frames (int): number of frames around each skill boundary to consider as "boundary region".
+                For example, 50 means frames within ±50 of a skill transition are marked as boundary frames.
+                Chunks overlapping with these regions will be oversampled according to boundary_oversampling_factor.
         """
         Dataset.__init__(self)
         self.repo_id = repo_id
@@ -136,6 +145,8 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         # ========== Customizations ==========
         self.seed = seed
         self.undersampled_skill_descriptions = undersampled_skill_descriptions if undersampled_skill_descriptions is not None else {}
+        self.boundary_oversampling_factor = boundary_oversampling_factor
+        self.boundary_window_frames = boundary_window_frames
         if modalities is None:
             modalities = ["rgb", "depth", "seg_instance_id"]
         if "seg_instance_id" in modalities:
@@ -200,8 +211,11 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         # Apply frame-level filtering based on skill annotations if needed
         # This must happen BEFORE creating chunks
         self.valid_frame_mask = None
+        self.boundary_frame_indicator = None
         if self.undersampled_skill_descriptions:
             self._build_frame_mask_and_filter_episodes()
+        if self.boundary_oversampling_factor > 1:
+            self._build_boundary_frame_indicator()
         
         # handle streaming mode and shuffling of episodes
         self._chunk_streaming_using_keyframe = chunk_streaming_using_keyframe
@@ -513,7 +527,8 @@ class BehaviorLeRobotDataset(LeRobotDataset):
     def _get_keyframe_chunk_indices(self, chunk_size=250) -> List[Tuple[int, int, int]]:
         """
         Divide each episode into chunks of data based on GOP of the data (here for B1K, GOP size is 250 frames).
-        If frame-level filtering is enabled, only include chunks where ALL frames are valid.
+        If frame-level filtering is enabled, only include chunks where more than half the frames are valid.
+        If boundary oversampling is enabled, chunks containing boundary frames will be added multiple times.
         Args:
             chunk_size (int): size of each chunk in number of frames. Default is 250 for B1K. Should be the GOP size of the video data.
         Returns:
@@ -522,22 +537,43 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         episode_lengths = {ep_idx: ep_dict["length"] for ep_idx, ep_dict in self.meta.episodes.items()}
         episode_lengths = [episode_lengths[ep_idx] for ep_idx in self.episodes]
         chunks = []
+        boundary_chunks_count = 0
         offset = 0
         for L in episode_lengths:
             local_starts = list(range(0, L, chunk_size))
             local_ends = local_starts[1:] + [L]
             for ls, le in zip(local_starts, local_ends):
-                # If filtering is enabled, only include chunks where all frames are valid
-                if self.valid_frame_mask is not None:
-                    chunk_mask = self.valid_frame_mask[offset + ls:offset + le]
-                    if sum(chunk_mask) > (chunk_size / 2):
+                # Check if chunk contains boundary frames first
+                contains_boundary = False
+                if self.boundary_frame_indicator is not None:
+                    chunk_boundary_indicator = self.boundary_frame_indicator[offset + ls:offset + le]
+                    contains_boundary = any(chunk_boundary_indicator)
+
+                # If chunk contains boundaries, ALWAYS include it (overrides filtering)
+                if contains_boundary:
+                    # Add chunk multiple times based on oversampling factor
+                    num_repetitions = self.boundary_oversampling_factor
+                    for _ in range(num_repetitions):
                         chunks.append((offset + ls, offset + le, ls))
+                    boundary_chunks_count += 1
                 else:
-                    chunks.append((offset + ls, offset + le, ls))
+                    # No boundaries - apply normal filtering logic
+                    should_include = True
+                    if self.valid_frame_mask is not None:
+                        chunk_mask = self.valid_frame_mask[offset + ls:offset + le]
+                        if sum(chunk_mask) <= (chunk_size / 2):
+                            should_include = False
+
+                    if should_include:
+                        # Add chunk once
+                        chunks.append((offset + ls, offset + le, ls))
             offset += L
 
         if self.valid_frame_mask is not None:
-            logger.info(f"Chunk-level filtering: kept {len(chunks)} chunks (each chunk must have all frames valid)")
+            logger.info(f"Chunk-level filtering: kept {len(chunks)} chunk instances (some chunks may be duplicated)")
+
+        if self.boundary_frame_indicator is not None:
+            logger.info(f"Boundary oversampling: {boundary_chunks_count} unique chunks contain boundaries and are repeated {self.boundary_oversampling_factor}x (total: {boundary_chunks_count * self.boundary_oversampling_factor} instances)")
 
         return chunks
 
@@ -618,7 +654,83 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         # Log overall statistics
         total_frames = len(valid_frame_mask)
         valid_frames = sum(valid_frame_mask)
-        logger.info(f"Frame-level mask built: {valid_frames}/{total_frames} frames marked as valid ({100*valid_frames/total_frames:.1f}%)")
+        logger.info(f"Frame-level mask built: {valid_frames}/{total_frames} frames marked as valid ({100*valid_frames/total_frames:.1f}%). NOTE: this does not account for boundary frames!")
+
+    def _build_boundary_frame_indicator(self) -> None:
+        """
+        Build a frame-level indicator marking frames near skill boundaries.
+        Frames within boundary_window_frames of any skill transition are marked as True.
+        This allows _get_keyframe_chunk_indices to oversample chunks containing these critical transitions.
+
+        A skill boundary is defined as the frame where one skill ends and another begins.
+        For each boundary, we mark frames in the window [boundary - window : boundary + window].
+        """
+        logger.info(f"Building boundary frame indicator with window={self.boundary_window_frames} frames, oversampling factor={self.boundary_oversampling_factor}")
+
+        # Build a boolean indicator for boundary frames
+        boundary_frame_indicator = []
+        boundary_count = 0
+
+        for ep_idx in self.episodes:
+            task_idx = ep_idx // 10000
+            ep_length = self.meta.episodes[ep_idx]["length"]
+
+            # Try to load annotations for this episode
+            annotation_path = self.root / "annotations" / f"task-{task_idx:04d}" / f"episode_{ep_idx:08d}.json"
+            try:
+                with open(annotation_path, "r") as f:
+                    annotations = json.load(f)
+                skill_annotations = annotations.get("skill_annotation", [])
+
+                # Create a boolean indicator for this episode, default to False
+                episode_indicator = [False] * ep_length
+
+                # Mark frames near skill boundaries
+                # Sort skills by their start frame to ensure correct ordering
+                sorted_skills = sorted(skill_annotations, key=lambda s: s["frame_duration"][0] if isinstance(s["frame_duration"][0], int) else s["frame_duration"][0][0])
+
+                for i in range(len(sorted_skills) - 1):
+                    current_skill = sorted_skills[i]
+                    next_skill = sorted_skills[i + 1]
+
+                    # Get end frame(s) of current skill
+                    current_duration = current_skill["frame_duration"]
+                    boundary_frames = []
+
+                    if isinstance(current_duration, list) and len(current_duration) == 2 and all(isinstance(x, int) for x in current_duration):
+                        # Simple case: [start, end]
+                        boundary_frames = [current_duration[1]]
+                    elif isinstance(current_duration, list) and isinstance(current_duration[0], (list, tuple)):
+                        # Complex case: [[start1, end1], [start2, end2], ...] or [(start1, end1), ...]
+                        # Each segment's end is a boundary point
+                        boundary_frames = [segment[1] for segment in current_duration]
+                    else:
+                        continue
+
+                    # Mark frames in window around each boundary
+                    for boundary_frame in boundary_frames:
+                        window_start = max(0, boundary_frame - self.boundary_window_frames)
+                        window_end = min(ep_length, boundary_frame + self.boundary_window_frames + 1)
+
+                        for frame_idx in range(window_start, window_end):
+                            episode_indicator[frame_idx] = True
+
+                        boundary_count += 1
+
+                boundary_frame_indicator.extend(episode_indicator)
+
+            except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"Could not load annotations for episode {ep_idx}: {e}. No boundaries marked for this episode.")
+                # Mark all frames as non-boundary
+                boundary_frame_indicator.extend([False] * ep_length)
+
+        # Store the boundary frame indicator
+        self.boundary_frame_indicator = boundary_frame_indicator
+
+        # Log statistics
+        total_frames = len(boundary_frame_indicator)
+        boundary_frames = sum(boundary_frame_indicator)
+        logger.info(f"Boundary frame indicator built: {boundary_frames}/{total_frames} frames marked as boundary ({100*boundary_frames/total_frames:.1f}%), {boundary_count} boundaries detected")
 
     def close(self) -> None:
         """
