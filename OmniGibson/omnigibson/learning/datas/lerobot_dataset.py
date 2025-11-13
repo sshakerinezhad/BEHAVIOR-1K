@@ -84,6 +84,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         boundary_oversampling_factor: int = 1,
         boundary_window_frames: int = 50,
         checkpoint_dir: str | Path | None = None,
+        resume_step: int = 0,
     ):
         """
         Custom args:
@@ -125,9 +126,15 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                 For example, 50 means frames within ±50 of a skill transition are marked as boundary frames.
                 Chunks overlapping with these regions will be oversampled according to boundary_oversampling_factor.
             checkpoint_dir (Path | None): directory to save the chunks file for chunk streaming.
+            resume_step (int): total number of samples processed globally across all workers before resuming.
+                If > 0, each worker will fast-forward to the appropriate position in their shuffled chunk sequence.
+                This ensures training continues from where it left off after a crash/restart.
+                Note: This should be (training_step * batch_size), NOT just training_step. For example, if you've
+                completed 1000 training steps with batch_size=32, pass resume_step=32000.
         """
         Dataset.__init__(self)
         self.checkpoint_dir = checkpoint_dir
+        self.resume_step = resume_step
         self.repo_id = repo_id
         self.root = Path(os.path.expanduser(str(root))) if root else HF_LEROBOT_HOME / repo_id
         self.image_transforms = image_transforms
@@ -388,10 +395,29 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         if self.current_streaming_chunk_idx is None:
             worker_info = get_worker_info()
             worker_id = 0 if worker_info is None else worker_info.id
+            num_workers = 1 if worker_info is None else worker_info.num_workers
+            logger.info(f"INITIALIZING A WORKER WITH WORKER_ID={worker_id} AND RESUME_STEP={self.resume_step}")
+
             rng = np.random.default_rng(self.seed + worker_id)
             rng.shuffle(self.chunks)
             self.current_streaming_chunk_idx = rng.integers(0, len(self.chunks)).item()
             self.current_streaming_frame_idx = self.chunks[self.current_streaming_chunk_idx][0]
+
+            # Fast-forward to resume position if resuming from checkpoint
+            if self.resume_step > 0:
+                # Calculate how many samples this worker should have processed
+                # resume_step is total samples processed globally, distributed among workers in round-robin
+                # Each worker gets approximately resume_step / num_workers samples
+                samples_to_skip = self.resume_step // num_workers
+                if worker_id < (self.resume_step % num_workers):
+                    # Some workers may have processed one extra sample due to rounding
+                    samples_to_skip += 1
+
+                if samples_to_skip > 0:
+                    logger.info(f"Worker {worker_id}: Resuming from {self.resume_step} global samples, fast-forwarding {samples_to_skip} samples")
+                    self._fast_forward_frames(samples_to_skip)
+                    logger.info(f"Worker {worker_id}: Resumed at chunk {self.current_streaming_chunk_idx}, frame {self.current_streaming_frame_idx}")
+
             if self.checkpoint_dir is not None:
                 current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(self.checkpoint_dir / f"chunks_{current_time}_{worker_id}.json", "w") as f:
@@ -399,6 +425,7 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                         "current_streaming_chunk_idx": self.current_streaming_chunk_idx,
                         "current_streaming_frame_idx": self.current_streaming_frame_idx,
                         "chunks": self.chunks,
+                        "resume_step": self.resume_step,
                     }, f, indent=4)
         # Current chunk iterated, move to next chunk
         if self.current_streaming_frame_idx >= self.chunks[self.current_streaming_chunk_idx][1]:
@@ -478,6 +505,26 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         self.current_streaming_frame_idx += 1
 
         return item
+
+    def _fast_forward_frames(self, num_samples: int) -> None:
+        """
+        Fast-forward through the chunk sequence by num_samples frames.
+        This is used when resuming from a checkpoint to skip already-processed data.
+
+        Args:
+            num_samples: Number of frames to skip forward
+        """
+        for _ in range(num_samples):
+            # Move to next frame
+            self.current_streaming_frame_idx += 1
+
+            # Check if we've exhausted the current chunk
+            if self.current_streaming_frame_idx >= self.chunks[self.current_streaming_chunk_idx][1]:
+                self.current_streaming_chunk_idx += 1
+                # Wrap around if we've gone through all chunks
+                if self.current_streaming_chunk_idx >= len(self.chunks):
+                    self.current_streaming_chunk_idx = 0
+                self.current_streaming_frame_idx = self.chunks[self.current_streaming_chunk_idx][0]
 
     def _load_episode_skill_prompts(self, ep_idx: int) -> list[dict] | None:
         """
