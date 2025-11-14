@@ -277,6 +277,7 @@ class Evaluator:
             "prompt": self.cfg.prompt,
             "inf_time_proprio_dropout": self.cfg.inf_time_proprio_dropout,
             "n_ds_steps": self.cfg.n_ds_steps,
+            "num_diffusion_steps": self.cfg.num_diffusion_steps,
         })
         logger.info("")
         logger.info("=" * 50)
