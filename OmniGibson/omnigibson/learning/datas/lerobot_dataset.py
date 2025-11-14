@@ -414,19 +414,23 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                     samples_to_skip += 1
 
                 if samples_to_skip > 0:
-                    logger.info(f"Worker {worker_id}: Resuming from {self.resume_step} global samples, fast-forwarding {samples_to_skip} samples")
-                    self._fast_forward_frames(samples_to_skip)
-                    logger.info(f"Worker {worker_id}: Resumed at chunk {self.current_streaming_chunk_idx}, frame {self.current_streaming_frame_idx}")
+                    logger.warning(f"Worker {worker_id}: Resuming from {self.resume_step} global samples, fast-forwarding {samples_to_skip} samples")
+                    print(f"Worker {worker_id}: Resuming from {self.resume_step} global samples, fast-forwarding {samples_to_skip} samples")
 
-            if self.checkpoint_dir is not None:
-                current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(self.checkpoint_dir / f"chunks_{current_time}_{worker_id}.json", "w") as f:
-                    json.dump({
-                        "current_streaming_chunk_idx": self.current_streaming_chunk_idx,
-                        "current_streaming_frame_idx": self.current_streaming_frame_idx,
-                        "chunks": self.chunks,
-                        "resume_step": self.resume_step,
-                    }, f, indent=4)
+                    self._fast_forward_frames(samples_to_skip)
+
+                    logger.warning(f"Worker {worker_id}: Resumed at chunk {self.current_streaming_chunk_idx}, frame {self.current_streaming_frame_idx}")
+                    print(f"Worker {worker_id}: Resumed at chunk {self.current_streaming_chunk_idx}, frame {self.current_streaming_frame_idx}")
+
+            # if self.checkpoint_dir is not None:
+            #     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            #     with open(self.checkpoint_dir / f"chunks_{current_time}_{worker_id}.json", "w") as f:
+            #         json.dump({
+            #             "current_streaming_chunk_idx": self.current_streaming_chunk_idx,
+            #             "current_streaming_frame_idx": self.current_streaming_frame_idx,
+            #             "chunks": self.chunks,
+            #             "resume_step": self.resume_step,
+            #         }, f, indent=4)
         # Current chunk iterated, move to next chunk
         if self.current_streaming_frame_idx >= self.chunks[self.current_streaming_chunk_idx][1]:
             self.current_streaming_chunk_idx += 1
