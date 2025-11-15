@@ -5,7 +5,7 @@ eval "$(conda shell.bash hook)"
 conda deactivate
 conda activate behavior
 
-export CUDA_VISIBLE_DEVICES=3;
+export CUDA_VISIBLE_DEVICES=0;
 export B1K_EVAL_TIME=true;
 # export OMNIGIBSON_DATA_PATH=/opt/BEHAVIOR-1K/datasets;
 
