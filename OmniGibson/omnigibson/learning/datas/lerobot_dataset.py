@@ -155,7 +155,6 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         # Caches for per-episode sidecar files
         self._skill_prompts_cache = {}
         # self._annotations_cache = {}
-        self._obs_loader_objects = {}  # Store actual loader objects for proper cleanup
 
         # ========== Customizations ==========
         self.seed = seed
@@ -444,14 +443,9 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         ep_idx = item["episode_index"].item()
 
         if self._should_obs_loaders_reload:
-            # Properly close the actual VideoLoader objects, not the iterators
-            for loader_obj in self._obs_loader_objects.values():
-                try:
-                    loader_obj.close()
-                except Exception:
-                    pass
+            for loader in self.obs_loaders.values():
+                loader.close()
             self.obs_loaders = dict()
-            self._obs_loader_objects = dict()
             # reload video loaders for new episode
             self.current_streaming_episode_idx = ep_idx
             for vid_key in self.meta.video_keys:
@@ -466,20 +460,19 @@ class BehaviorLeRobotDataset(LeRobotDataset):
                         kwargs["id_list"] = th.tensor(
                             json.load(f)[f"{ROBOT_CAMERA_NAMES['R1Pro'][vid_key.split('.')[-1]]}::unique_ins_ids"]
                         )
-                # Create loader object and store it for proper cleanup
-                loader_obj = OBS_LOADER_MAP[vid_key.split(".")[2]](
-                    data_path=self.root,
-                    task_id=task_id,
-                    camera_id=vid_key.split(".")[-1],
-                    demo_id=f"{ep_idx:08d}",
-                    start_idx=self.chunks[self.current_streaming_chunk_idx][2],
-                    start_idx_is_keyframe=True,
-                    batch_size=1,
-                    stride=1,
-                    **kwargs,
+                self.obs_loaders[vid_key] = iter(
+                    OBS_LOADER_MAP[vid_key.split(".")[2]](
+                        data_path=self.root,
+                        task_id=task_id,
+                        camera_id=vid_key.split(".")[-1],
+                        demo_id=f"{ep_idx:08d}",
+                        start_idx=self.chunks[self.current_streaming_chunk_idx][2],
+                        start_idx_is_keyframe=True,
+                        batch_size=1,
+                        stride=1,
+                        **kwargs,
+                    )
                 )
-                self._obs_loader_objects[vid_key] = loader_obj
-                self.obs_loaders[vid_key] = iter(loader_obj)
             self._should_obs_loaders_reload = False
 
         query_indices = None
@@ -908,16 +901,13 @@ class BehaviorLeRobotDataset(LeRobotDataset):
         Safe to call multiple times.
         """
         try:
-            # Close actual loader objects, not iterators
-            if hasattr(self, "_obs_loader_objects") and isinstance(self._obs_loader_objects, dict):
-                for loader_obj in list(self._obs_loader_objects.values()):
+            if hasattr(self, "obs_loaders") and isinstance(self.obs_loaders, dict):
+                for loader in list(self.obs_loaders.values()):
                     try:
-                        if hasattr(loader_obj, "close"):
-                            loader_obj.close()
+                        if hasattr(loader, "close"):
+                            loader.close()
                     except Exception:
                         pass
-                self._obs_loader_objects = dict()
-            if hasattr(self, "obs_loaders"):
                 self.obs_loaders = dict()
         except Exception:
             # Best-effort cleanup
