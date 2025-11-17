@@ -9,10 +9,10 @@ export CUDA_VISIBLE_DEVICES=3;
 export B1K_EVAL_TIME=true;
 # export OMNIGIBSON_DATA_PATH=/opt/BEHAVIOR-1K/datasets;
 
-export TRAIN_CONFIG_NAME="pi05_b1k_oversample_ltc";
-export CKPT_NAME="ltc_openpi_05_20251116_073405";
-export STEP_COUNT=15000;
-export TASK_NAME="loading_the_car";
+export TRAIN_CONFIG_NAME="pi05_b1k_oversample_hee";
+export CKPT_NAME="hee_openpi_05_20251116_064228";
+export STEP_COUNT=18000;
+export TASK_NAME="hiding_Easter_eggs";
 
 # export CONTROL_MODE="receeding_horizon";
 # export MAX_LEN=100;
@@ -24,7 +24,7 @@ export CONTROL_MODE="receeding_temporal";
 export MAX_LEN=72;
 export ACTION_HORIZON=12;
 export TEMPORAL_ENSEMBLE_MAX=6;
-export EXP_K_VALUE=0.5;
+export EXP_K_VALUE=0.8;
 
 aws s3 sync \
     s3://behavior-challenge/outputs/checkpoints/${TRAIN_CONFIG_NAME}/${CKPT_NAME}/${STEP_COUNT}/ \
@@ -51,4 +51,4 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.p
     max_len=${MAX_LEN} \
     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
     exp_k_value=${EXP_K_VALUE} \
-    log_path="${LOG_DIR}/k_0.5"
+    log_path="${LOG_DIR}/k_${EXP_K_VALUE}"
