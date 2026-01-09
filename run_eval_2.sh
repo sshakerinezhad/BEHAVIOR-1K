@@ -52,4 +52,4 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.p
     max_len=${MAX_LEN} \
     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
     exp_k_value=${EXP_K_VALUE} \
-    log_path="${LOG_DIR}/second_jax_again"
+    log_path="${LOG_DIR}/second_jax_fix_v1"

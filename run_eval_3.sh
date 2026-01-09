@@ -37,64 +37,18 @@ export LOG_DIR="minimal_rollout_from_b1k/${EXP_NAME}";
 
 mkdir -p "${LOG_DIR}";
 
-export POLICY_ARGS="policy=local policy_config=pi05_b1k_inference_final policy_dir=/workspace/openpi/outputs/checkpoints/${TRAIN_CONFIG_NAME}/${CKPT_NAME}/${STEP_COUNT}";
-
 XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
-    policy=local policy_config=pi05_b1k_inference_final policy_dir=/workspace/RLinf/safetensors_ckpts/openpi_05_20251115_050323_9000_tor/ \
+    policy=local policy_config=pi05_b1k_inference_final policy_dir=/workspace/RLinf/safetensors_ckpts/openpi_05_20251115_050323_9000_tor_fixed/ \
     task.name="${TASK_NAME}" \
     eval_on_train_instances=true \
     eval_instance_ids=[0] \
     use_heavy_robot=true \
     inf_time_proprio_dropout=0.0 \
+    max_steps=6000 \
     num_diffusion_steps=5 \
     control_mode=${CONTROL_MODE} \
     action_horizon=${ACTION_HORIZON} \
     max_len=${MAX_LEN} \
     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
     exp_k_value=${EXP_K_VALUE} \
-    log_path="${LOG_DIR}/first_pytorch_again"
-
-# XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
-#     ${POLICY_ARGS} \
-#     task.name="${TASK_NAME}" \
-#     eval_on_train_instances=true \
-#     eval_instance_ids=[0] \
-#     use_heavy_robot=true \
-#     inf_time_proprio_dropout=0.0 \
-#     num_diffusion_steps=5 \
-#     control_mode=${CONTROL_MODE} \
-#     action_horizon=${ACTION_HORIZON} \
-#     max_len=${MAX_LEN} \
-#     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
-#     exp_k_value=${EXP_K_VALUE} \
-#     log_path="${LOG_DIR}/second_jax_again"
-
-# XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
-#     ${POLICY_ARGS} \
-#     task.name="${TASK_NAME}" \
-#     eval_on_train_instances=true \
-#     eval_instance_ids=[0] \
-#     use_heavy_robot=true \
-#     inf_time_proprio_dropout=0.0 \
-#     num_diffusion_steps=5 \
-#     control_mode=${CONTROL_MODE} \
-#     action_horizon=${ACTION_HORIZON} \
-#     max_len=${MAX_LEN} \
-#     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
-#     exp_k_value=${EXP_K_VALUE} \
-#     log_path="${LOG_DIR}/third_attempt"
-
-# XLA_PYTHON_CLIENT_PREALLOCATE=false python OmniGibson/omnigibson/learning/eval.py \
-#     ${POLICY_ARGS} \
-#     task.name="${TASK_NAME}" \
-#     eval_on_train_instances=true \
-#     eval_instance_ids=[0] \
-#     use_heavy_robot=true \
-#     inf_time_proprio_dropout=0.0 \
-#     num_diffusion_steps=5 \
-#     control_mode=${CONTROL_MODE} \
-#     action_horizon=${ACTION_HORIZON} \
-#     max_len=${MAX_LEN} \
-#     temporal_ensemble_max=${TEMPORAL_ENSEMBLE_MAX} \
-#     exp_k_value=${EXP_K_VALUE} \
-#     log_path="${LOG_DIR}/fourth_attempt"
+    log_path="${LOG_DIR}/first_pytorch_fix_v2_just_again"
