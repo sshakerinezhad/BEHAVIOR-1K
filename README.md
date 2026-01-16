@@ -1,10 +1,43 @@
 <h1 align="center">BEHAVIOR-1K</h1>
 
+
 ![BEHAVIOR-1K](./docs/assets/readme_splash_logo.png)
+
+> Originally forked from [Physical-Intelligence/openpi](https://github.com/Physical-Intelligence/openpi) and extended for the [BEHAVIOR-1K Challenge 2025](https://behavior.stanford.edu/).
+
 
 **BEHAVIOR-1K** is a comprehensive simulation benchmark for testing embodied AI agents on 1,000 everyday household activities. This monolithic repository provides everything needed to train and evaluate agents on human-centered tasks like cleaning, cooking, and organizing — activities selected from real human time-use surveys and preference studies.
 
 ***Check out our [main website](https://behavior.stanford.edu/) for more details!***
+
+### Changes
+
+**Dataset Resume Fix**: Training crashes caused 100% data duplication on resume (dataloader restarted from beginning). Added `resume_step` parameter for deterministic fast-forward, reducing overlap to ~10%.
+
+**File**: [OmniGibson/omnigibson/learning/lerobot_dataset.py](OmniGibson/omnigibson/learning/lerobot_dataset.py)
+
+### Evaluation
+
+```bash
+export TASK_NAME="cleaning_the_pool"
+export CKPT_DIR="/path/to/checkpoint"
+export CONTROL_MODE="receding_horizon"  # or temporal_ensemble
+export OPENPI_CKPT_ROOT="/path/to/openpi/checkpoints"
+
+./scripts/run_eval.sh
+```
+
+| Control Mode | Description |
+|--------------|-------------|
+| `temporal_ensemble` | Replan every timestep (standard) |
+| `receding_horizon` | Execute full action chunk before replanning (better for our tasks) |
+
+### Links
+
+- **Technical Report**: [merlyn-labs.com/behavior-report](https://merlyn-labs.com/behavior-report)
+- **Companion Repo**: [Merlyn-Labs/openpi](https://github.com/Merlyn-Labs/openpi)
+- **Upstream**: [StanfordVL/BEHAVIOR-1K](https://github.com/StanfordVL/BEHAVIOR-1K)
+- **Contributors**: [@sshakerinezhad](https://github.com/sshakerinezhad), [@salmanshah1d](https://github.com/salmanshah1d)
 
 # 🛠️ Installation
 
@@ -109,41 +142,6 @@ To see all available options:
 ```bash
 ./setup.sh --help
 ```
-
----
-
-## VLA Policy Training & Evaluation
-
-This fork includes modifications for the [BEHAVIOR-1K Challenge 2025](https://behavior.stanford.edu/), integrating [openpi](https://github.com/Merlyn-Labs/openpi) for VLA policy training.
-
-### Changes
-
-**Dataset Resume Fix**: Training crashes caused 100% data duplication on resume (dataloader restarted from beginning). Added `resume_step` parameter for deterministic fast-forward, reducing overlap to ~10%.
-
-**File**: [OmniGibson/omnigibson/learning/lerobot_dataset.py](OmniGibson/omnigibson/learning/lerobot_dataset.py)
-
-### Evaluation
-
-```bash
-export TASK_NAME="cleaning_the_pool"
-export CKPT_DIR="/path/to/checkpoint"
-export CONTROL_MODE="receding_horizon"  # or temporal_ensemble
-export OPENPI_CKPT_ROOT="/path/to/openpi/checkpoints"
-
-./scripts/run_eval.sh
-```
-
-| Control Mode | Description |
-|--------------|-------------|
-| `temporal_ensemble` | Replan every timestep (standard) |
-| `receding_horizon` | Execute full action chunk before replanning (better for our tasks) |
-
-### Links
-
-- **Technical Report**: [merlyn-labs.com/behavior-report](https://merlyn-labs.com/behavior-report)
-- **Companion Repo**: [Merlyn-Labs/openpi](https://github.com/Merlyn-Labs/openpi)
-- **Upstream**: [StanfordVL/BEHAVIOR-1K](https://github.com/StanfordVL/BEHAVIOR-1K)
-- **Contributors**: [@sshakerinezhad](https://github.com/sshakerinezhad), [@salmanshah1d](https://github.com/salmanshah1d)
 
 ---
 
